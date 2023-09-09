@@ -1,77 +1,89 @@
-name: Shared Deploy
+name: Shared Deploy Google Cloud
 
 on:
   workflow_call:
+    inputs:
+      gcpProjectId:
+        required: true
+        type: string
+      gkeZone:
+        default: us-central1-c
+        required: true
+        type: string
     secrets:
       dockerUser:
         required: true
       dockerPassword:
+        required: true      
+      wifProvider:
         required: true
-      awsAccessKey:
+      wifServiceAccount:
         required: true
-      awsSecretKey:
-        required: true
+env:
+  PROJECT_ID: ${{ inputs.gcpProjectId }}
+  GKE_ZONE: ${{ inputs.gcpProjectId }}
 
 jobs:
 
   build:
+    name: Deploy to Google Cloud
 
     runs-on: ubuntu-latest
 
-    steps:
-    - uses: actions/checkout@v3
-
-    - name: Build client
-      run: docker build --tag timbilt/multi-client ./client
-    
-    - name: Build gateway
-      run: docker build --tag timbilt/multi-gateway ./nginx
-
-    - name: Build api
-      run: docker build --tag timbilt/multi-api ./server
-
-    - name: Build worker
-      run: docker build --tag timbilt/multi-worker ./worker
-      
-    - name: Docker login
-      run: echo "${{ secrets.dockerPassword }}" | docker login -u ${{ secrets.dockerUser }} --password-stdin
-
-    - name: Push client
-      run: docker push timbilt/multi-client
-
-    - name: Push gateway
-      run: docker push timbilt/multi-gateway
-
-    - name: Push api
-      run: docker push timbilt/multi-api
-
-    - name: Push worker
-      run: docker push timbilt/multi-worker
-
-  deploy:
-
-    needs:
-      - build
-    
-    runs-on: ubuntu-latest
+    # permissions:
+    #   contents: 'read'
+    #   id-token: 'write'
 
     steps:
-      - name: Checkout sources
-        uses: actions/checkout@v3
+      - name: 'Checkout'
+        uses: 'actions/checkout@v3'
 
-      - name: Generate deployment package
-        run: zip -r deploy.zip . -x '*.git*'
 
-      - name: Deploy to EB
-        uses: einaregilsson/beanstalk-deploy@v18
+      - name: 'Google auth'
+        id: 'auth'
+        uses: 'google-github-actions/auth@v1'
         with:
-          aws_access_key: ${{ secrets.awsAccessKey }}
-          aws_secret_key: ${{ secrets.awsSecretKey }}
-          application_name: multi-docker
-          environment_name: multi-docker-env-1
-          existing_bucket_name: elasticbeanstalk-us-east-1-268277632823
-          region: us-east-1
-          version_label: ${{ github.sha }}
-          deployment_package: deploy.zip
+          workload_identity_provider: '${{ secrets.wifProvider }}'
+          service_account: '${{ secrets.wifServiceAccount }}'
+
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v1'
+        with:
+          project_id: '${{ env.PROJECT_ID }}'
+
+
+      # - name: 'Docker auth'
+      #   run: |-
+      #     gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev
+
+      - name: 'Docker auth'
+        run: |-
+          echo "${{ secrets.dockerPassword }}" | docker login -u "${{ secrets.dockerUser }}" --password-stdin
+
+      - name: 'Run Tests'
+        run: |-
+          docker build -t timbilt/react-test -f ./client/Dockerfile.dev ./client
+          docker run timbilt/react-test CI=true yarn test
+
+      # - name: 'Build and push container'
+      #   run: |-
+      #     docker build -t "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.APP }}/${{ env.APP }}:${{ github.sha }}" ./app
+      #     docker push "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.APP }}/${{ env.APP }}:${{ github.sha }}"
+      
+      # - name: 'Create release name'
+      #   run: |-
+      #     echo "RELEASE_NAME=${{ env.APP }}-${GITHUB_SHA::7}-${GITHUB_RUN_NUMBER}" >> ${GITHUB_ENV}
+
+      # - name: 'Create Cloud Deploy release'
+      #   uses: 'google-github-actions/create-cloud-deploy-release@v0'
+      #   with:
+      #     delivery_pipeline: '${{ env.APP }}'
+      #     name: '${{ env.RELEASE_NAME }}'
+      #     region: '${{ env.REGION }}'
+      #     description: '${{ env.GITHUB_COMMIT_MSG }}'
+      #     skaffold_file: 'config/skaffold.yaml'
+      #     images: 'app=${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.APP }}/${{ env.APP }}:${{ github.sha }}'
+
+    
 
         

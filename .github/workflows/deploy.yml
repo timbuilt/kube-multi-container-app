@@ -10,9 +10,11 @@ jobs:
   deploy:
     name: Deploy
     uses: ./.github/workflows/deploy-shared.yml
+    with:
+      gcpProjectId: kube-multi-container-app
+      gkeZone: us-central1-c
     secrets:
       dockerUser: ${{ secrets.DOCKER_USER }}
       dockerPassword: ${{ secrets.DOCKER_PASSWORD }}
-      awsAccessKey: ${{ secrets.AWS_ACCESS_KEY }}
-      awsSecretKey: ${{ secrets.AWS_SECRET_KEY }}
-
+      wifProvider: ${{ secrets.WIF_PROVIDER }}
+      wifServiceAccount: ${{ secrets.WIF_SERVICE_ACCOUNT }}
